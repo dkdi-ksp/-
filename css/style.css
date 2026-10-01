@@ -266,6 +266,28 @@ button.primary {
 #toast.error { background: var(--danger); }
 #toast.ok { background: #2E7D5B; }
 
+/* 提醒横幅：从顶部滑入，8 秒后自己淡出 */
+.notify-banner {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--header-h) + env(safe-area-inset-top) + 8px);
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .3);
+  transition: opacity .35s, transform .35s;
+}
+.notify-banner strong { font-size: 15px; }
+.notify-banner span { font-size: 12px; opacity: .9; }
+.notify-banner.out { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+
 #sheet {
   position: fixed;
   inset: 0;

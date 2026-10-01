@@ -21,6 +21,10 @@ var CWui = (function () {
 
   var TAB_TITLES = { timetable: '我的课程表', today: '今天', settings: '设置' };
 
+  /* 这句话必须在设置页和今日页都出现。App 内通知只在页面打开时才可能响，
+     不能让它看起来像系统日历那样可靠。 */
+  var NOTIFY_CAVEAT = 'App 关闭后不保证准时提醒；可靠的提醒请用系统日历（设置页 → 导出到手机日历）。';
+
   var state = { tab: 'timetable', viewWeek: null };
   var toastTimer = null;
 
@@ -236,6 +240,8 @@ var CWui = (function () {
       html += '</section>';
     }
 
+    html += '<p class="hint center">' + NOTIFY_CAVEAT + '</p>';
+
     $('view').innerHTML = html;
   }
 
@@ -361,7 +367,7 @@ var CWui = (function () {
         '<h2>提醒</h2>' +
         '<label class="field"><span>上课前多少分钟</span><input type="number" id="set-remind" min="0" max="120" value="' + esc(settings.reminderMinutes) + '"></label>' +
         '<label class="check"><input type="checkbox" id="set-notify"' + (settings.notifyEnabled ? ' checked' : '') + '> 启用 App 内通知</label>' +
-        '<p class="hint">App 关闭后不保证准时提醒。要可靠的提醒请用下面的「导出到手机日历」。</p>' +
+        '<p class="hint">' + NOTIFY_CAVEAT + '</p>' +
       '</section>' +
 
       '<section class="card">' +
@@ -421,8 +427,17 @@ var CWui = (function () {
     });
 
     $('set-notify').addEventListener('change', function (e) {
-      save({ notifyEnabled: e.target.checked });
-      // Task 8 接线：改调 app.notifier.setEnabled(e.target.checked)
+      var box = e.target;
+      var notifier = window.app && window.app.notifier;
+      if (!notifier) {
+        save({ notifyEnabled: box.checked });
+        return;
+      }
+      // setEnabled 返回 false 表示没开成（权限被拒 / 浏览器不支持），把勾选框还原
+      notifier.setEnabled(box.checked).then(function (ok) {
+        box.checked = ok;
+        if (ok) toast('已开启 App 内通知', 'ok');
+      });
     });
 
     $('period-add').addEventListener('click', function () {
@@ -688,18 +703,20 @@ var CWui = (function () {
     syncTabbar();
   }
 
-  function loadDemoData() {
-    var store = getStore();
-    store.clearAll();
-    store.saveSettings({ termStartMonday: '2026-09-07' });
-    store.addCourse({ name: '高等数学', teacher: '张老师', location: 'A-301', dayOfWeek: 1, startPeriod: 1, endPeriod: 2, weekStart: 1, weekEnd: 16, weekParity: 'all', note: '' });
-    store.addCourse({ name: '大学英语', teacher: '王老师', location: 'B-102', dayOfWeek: 3, startPeriod: 5, endPeriod: 6, weekStart: 3, weekEnd: 12, weekParity: 'odd', note: '' });
-  }
-
   function init() {
-    if (typeof location !== 'undefined' && location.search.indexOf('demo') !== -1) {
-      loadDemoData(); // Task 8 完成后删除
+    // 全局唯一的通知器实例。放在这里而不是 notify.js 里，是因为它需要读 store，
+    // 而 store 是 ui.js 从 window.app 拿的。
+    if (window.app) {
+      window.app.notifier = CWnotify.createNotifier({
+        getState: function () {
+          return { courses: getStore().getCourses(), settings: getStore().getSettings() };
+        },
+        saveSettings: function (patch) { getStore().saveSettings(patch); },
+        onError: function (msg) { toast(msg, 'error'); }
+      });
+      window.app.notifier.autoStart(); // 上次开过且权限还在的话接着跑
     }
+
     $('tabbar').addEventListener('click', function (e) {
       var btn = e.target.closest ? e.target.closest('[data-tab]') : null;
       if (!btn) return;
