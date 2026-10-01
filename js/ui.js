@@ -6,6 +6,8 @@ var CWui = (function () {
 
   var CWweeks = (typeof module !== 'undefined' && module.exports)
     ? require('./weeks.js') : window.CWweeks;
+  var CWstore = (typeof module !== 'undefined' && module.exports)
+    ? require('./store.js') : window.CWstore;
   var CWconflicts = (typeof module !== 'undefined' && module.exports)
     ? require('./conflicts.js') : window.CWconflicts;
   var CWics = (typeof module !== 'undefined' && module.exports)
@@ -177,9 +179,196 @@ var CWui = (function () {
     $('view').innerHTML = '<section class="card"><p class="hint">设置页尚未实现。</p></section>';
   }
 
+  // ---------------------------------------------------------------- 课程表单
+
+  function closeCourseForm() {
+    var sheet = $('sheet');
+    if (!sheet) return;
+    sheet.className = 'hidden';
+    sheet.innerHTML = '';
+    document.body.classList.remove('no-scroll');
+  }
+
+  /* 节次下拉的选项文案：第 3 节（10:05） */
+  function periodLabel(settings, n) {
+    var per = settings.periods[n - 1];
+    return '第 ' + n + ' 节' + (per && per.start ? '（' + per.start + '）' : '');
+  }
+
+  /* 课程引用的节次可能已被用户从节次表里删掉。下拉框只能显示真实存在的节，
+     否则会算出「第 0 节」这种非法选项，或者变成一个空的、选不了的下拉框。 */
+  function clampPeriod(n, periodCount) {
+    n = Number(n);
+    if (!isFinite(n) || n < 1) return 1;
+    if (n > periodCount) return periodCount;
+    return Math.floor(n);
+  }
+
+  function optionsFrom(settings, from, to, selected) {
+    var out = '';
+    for (var n = Math.max(1, from); n <= to; n++) {
+      out += '<option value="' + n + '"' + (n === Number(selected) ? ' selected' : '') + '>' +
+        periodLabel(settings, n) + '</option>';
+    }
+    return out;
+  }
+
   function openCourseForm(course) {
-    // Task 5 实现
-    toast(course ? '编辑功能尚未实现' : '添加功能尚未实现', 'warn');
+    var store = getStore();
+    var settings = store.getSettings();
+    var courses = store.getCourses();
+    var isEdit = !!course;
+
+    if (!settings.periods.length) {
+      toast('节次表是空的，先去「设置」里加一节', 'error');
+      return;
+    }
+
+    var base = course || {
+      name: '', teacher: '', location: '',
+      dayOfWeek: 1,
+      startPeriod: 1,
+      endPeriod: 1,
+      weekStart: 1,
+      weekEnd: settings.totalWeeks,
+      weekParity: 'all',
+      note: ''
+    };
+
+    var periodCount = settings.periods.length;
+    // 节次表可能被删短过，把课程里的节次钳到仍然存在的范围内，表单才用得起来
+    var startP = clampPeriod(base.startPeriod, periodCount);
+    var endP = Math.max(startP, clampPeriod(base.endPeriod, periodCount));
+
+    var dayOpts = '';
+    for (var d = 1; d <= 7; d++) {
+      dayOpts += '<option value="' + d + '"' + (d === Number(base.dayOfWeek) ? ' selected' : '') + '>' +
+        '星期' + DAY_LABELS[d - 1] + '</option>';
+    }
+
+    var parityOpts = '';
+    [['all', '每周'], ['odd', '单周'], ['even', '双周']].forEach(function (p) {
+      parityOpts += '<option value="' + p[0] + '"' + (p[0] === base.weekParity ? ' selected' : '') + '>' + p[1] + '</option>';
+    });
+
+    var html =
+      '<form id="course-form" class="sheet-panel">' +
+        '<h2>' + (isEdit ? '编辑课程' : '新增课程') + '</h2>' +
+        '<label class="field"><span>课程名</span><input name="name" required maxlength="30" value="' + esc(base.name) + '"></label>' +
+        '<label class="field"><span>教师</span><input name="teacher" maxlength="20" value="' + esc(base.teacher) + '"></label>' +
+        '<label class="field"><span>教室</span><input name="location" maxlength="20" value="' + esc(base.location) + '"></label>' +
+        '<label class="field"><span>星期</span><select name="dayOfWeek">' + dayOpts + '</select></label>' +
+        '<label class="field"><span>起始节</span><select name="startPeriod">' +
+          optionsFrom(settings, 1, periodCount, startP) + '</select></label>' +
+        '<label class="field"><span>结束节</span><select name="endPeriod">' +
+          optionsFrom(settings, startP, periodCount, endP) + '</select></label>' +
+        '<label class="field"><span>起始周</span><input type="number" name="weekStart" min="1" max="' + settings.totalWeeks + '" value="' + esc(base.weekStart) + '"></label>' +
+        '<label class="field"><span>结束周</span><input type="number" name="weekEnd" min="1" max="' + settings.totalWeeks + '" value="' + esc(base.weekEnd) + '"></label>' +
+        '<label class="field"><span>单双周</span><select name="weekParity">' + parityOpts + '</select></label>' +
+        '<label class="field"><span>备注</span><textarea name="note" rows="2" maxlength="200">' + esc(base.note) + '</textarea></label>' +
+        '<div class="row">' +
+          (isEdit ? '' : '<button type="button" id="form-copy">复制上一门课</button>') +
+          '<button type="button" id="form-cancel">取消</button>' +
+          '<button type="submit" class="primary">保存</button>' +
+          (isEdit ? '<button type="button" id="form-delete" class="danger">删除</button>' : '') +
+        '</div>' +
+      '</form>';
+
+    var sheet = $('sheet');
+    sheet.innerHTML = html;
+    sheet.className = '';
+    document.body.classList.add('no-scroll');
+
+    var form = $('course-form');
+
+    /* 起始节变了，结束节的下拉要跟着重算：不能选到比起始节更早的节 */
+    form.elements.startPeriod.addEventListener('change', function () {
+      var min = Number(form.elements.startPeriod.value);
+      var prev = Number(form.elements.endPeriod.value);
+      form.elements.endPeriod.innerHTML =
+        optionsFrom(settings, min, periodCount, Math.max(prev, min));
+    });
+
+    $('form-cancel').addEventListener('click', closeCourseForm);
+
+    var copyBtn = $('form-copy');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        if (!courses.length) { toast('还没有可复制的课程', 'warn'); return; }
+        var last = courses[courses.length - 1];
+        form.elements.name.value = '';   // 课程名清空，其余照抄
+        form.elements.teacher.value = last.teacher || '';
+        form.elements.location.value = last.location || '';
+        form.elements.dayOfWeek.value = String(last.dayOfWeek);
+        form.elements.startPeriod.value = String(last.startPeriod);
+        form.elements.startPeriod.dispatchEvent(new Event('change'));
+        form.elements.endPeriod.value = String(last.endPeriod);
+        form.elements.weekStart.value = String(last.weekStart);
+        form.elements.weekEnd.value = String(last.weekEnd);
+        form.elements.weekParity.value = last.weekParity;
+        form.elements.note.value = last.note || '';
+      });
+    }
+
+    var deleteBtn = $('form-delete');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', function () {
+        if (!window.confirm('确定删除「' + course.name + '」？')) return;
+        store.deleteCourse(course.id);
+        closeCourseForm();
+        render();
+        toast('已删除', 'ok');
+      });
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var fd = new FormData(form);
+      var data = {
+        name: fd.get('name'),
+        teacher: fd.get('teacher'),
+        location: fd.get('location'),
+        note: fd.get('note'),
+        dayOfWeek: Number(fd.get('dayOfWeek')),
+        startPeriod: Number(fd.get('startPeriod')),
+        endPeriod: Number(fd.get('endPeriod')),
+        weekStart: Number(fd.get('weekStart')),
+        weekEnd: Number(fd.get('weekEnd')),
+        weekParity: fd.get('weekParity')
+      };
+
+      // 先校验（表单不关，让用户接着改），再问冲突（用户可能有自己的理由），最后才落盘
+      try {
+        CWstore.validateCourse(data);
+      } catch (err) {
+        toast(err.message, 'error');
+        return;
+      }
+
+      var others = store.getCourses();
+      var conflicts = CWconflicts.findConflicts(
+        isEdit ? Object.assign({}, data, { id: course.id }) : data,
+        others
+      );
+      if (conflicts.length) {
+        var names = conflicts.map(function (c) { return c.name; }).join('、');
+        if (!window.confirm('与「' + names + '」时间冲突，仍要保存吗？')) return;
+      }
+
+      try {
+        if (isEdit) store.updateCourse(course.id, data);
+        else store.addCourse(data);
+      } catch (err) {
+        toast(err.message, 'error');
+        return;
+      }
+
+      closeCourseForm();
+      render();
+      toast('已保存', 'ok');
+    });
+
+    form.elements.name.focus();
   }
 
   // ---------------------------------------------------------------- 调度
@@ -218,6 +407,10 @@ var CWui = (function () {
       render();
     });
     $('fab').addEventListener('click', function () { openCourseForm(null); });
+    // 点遮罩关闭（只在这里绑一次，openCourseForm 每次重写 innerHTML，绑在那里会越积越多）
+    $('sheet').addEventListener('click', function (e) {
+      if (e.target === $('sheet')) closeCourseForm();
+    });
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) render();
     });
@@ -231,6 +424,7 @@ var CWui = (function () {
     renderToday: renderToday,
     renderSettings: renderSettings,
     openCourseForm: openCourseForm,
+    closeCourseForm: closeCourseForm,
     toast: toast,
     esc: esc,
     getState: function () { return state; }
