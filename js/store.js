@@ -41,6 +41,20 @@ var CWstore = (function () {
     };
   }
 
+  /* 把任意来源的设置对象补齐成完整设置：缺的字段回落到默认值，多的键丢掉。
+     读存储和导入备份共用同一套，行为才一致。 */
+  function mergeSettings(saved) {
+    var defaults = defaultSettings();
+    if (!saved || typeof saved !== 'object') return defaults;
+    var out = {};
+    for (var k in defaults) {
+      if (Object.prototype.hasOwnProperty.call(defaults, k)) {
+        out[k] = saved[k] === undefined ? defaults[k] : saved[k];
+      }
+    }
+    return out;
+  }
+
   function validateCourse(c) {
     if (!c || !String(c.name == null ? '' : c.name).trim()) throw new Error('课程名不能为空');
     var d = Number(c.dayOfWeek);
@@ -79,6 +93,36 @@ var CWstore = (function () {
     return out;
   }
 
+  /* 按 id 取色：同一门课永远同一个颜色，和录入顺序无关。
+     用「按顺序取用」的话，删掉中间一门课就会让它后面的课集体变脸；
+     导入到新设备时顺序一变，颜色也会全乱。 */
+  function colorForId(id) {
+    var s = String(id == null ? '' : id);
+    var h = 0;
+    for (var i = 0; i < s.length; i++) {
+      h = (h * 31 + s.charCodeAt(i)) % 1000003;   // 小质数取模，别让 h 溢出精度
+    }
+    return PALETTE[h % PALETTE.length];
+  }
+
+  /* 把一门课程补齐成规范形态：字符串字段转字符串、数字字段转数字、
+     缺 id 或颜色就补上。addCourse 与导入备份共用，两处行为才一致。 */
+  function normalizeCourse(course, fallbackColor) {
+    var c = cloneShallow(course);
+    c.name = c.name == null ? '' : String(c.name).trim();
+    c.dayOfWeek = Number(c.dayOfWeek);
+    c.startPeriod = Number(c.startPeriod);
+    c.endPeriod = Number(c.endPeriod);
+    c.weekStart = Number(c.weekStart);
+    c.weekEnd = Number(c.weekEnd);
+    c.teacher = c.teacher == null ? '' : String(c.teacher);
+    c.location = c.location == null ? '' : String(c.location);
+    c.note = c.note == null ? '' : String(c.note);
+    c.id = c.id || newId();
+    c.color = c.color || fallbackColor || colorForId(c.id);
+    return c;
+  }
+
   function createStore(storage) {
     function readJSON(key, fallback) {
       var raw = storage.getItem(key);
@@ -104,16 +148,7 @@ var CWstore = (function () {
     }
 
     function getSettings() {
-      var saved = readJSON(KEYS.settings, null);
-      var defaults = defaultSettings();
-      if (!saved || typeof saved !== 'object') return defaults;
-      var out = {};
-      for (var k in defaults) {
-        if (Object.prototype.hasOwnProperty.call(defaults, k)) {
-          out[k] = saved[k] === undefined ? defaults[k] : saved[k];
-        }
-      }
-      return out;
+      return mergeSettings(readJSON(KEYS.settings, null));
     }
 
     function saveSettings(patch) {
@@ -134,18 +169,7 @@ var CWstore = (function () {
     function addCourse(course) {
       validateCourse(course);
       var list = getCourses();
-      var c = cloneShallow(course);
-      c.name = String(c.name).trim();
-      c.dayOfWeek = Number(c.dayOfWeek);
-      c.startPeriod = Number(c.startPeriod);
-      c.endPeriod = Number(c.endPeriod);
-      c.weekStart = Number(c.weekStart);
-      c.weekEnd = Number(c.weekEnd);
-      c.teacher = c.teacher == null ? '' : String(c.teacher);
-      c.location = c.location == null ? '' : String(c.location);
-      c.note = c.note == null ? '' : String(c.note);
-      c.id = c.id || newId();
-      c.color = c.color || PALETTE[list.length % PALETTE.length];
+      var c = normalizeCourse(course);
       list.push(c);
       saveCourses(list);
       return c;
@@ -201,10 +225,32 @@ var CWstore = (function () {
       if (!data.settings || typeof data.settings !== 'object') {
         return { ok: false, error: '文件格式不正确，缺少 settings 对象' };
       }
+      /* 逐条校验：选错文件时外层结构往往是对的，离谱的是里面的字段。
+         尤其 weekParity —— 课表页（走 matchesParity）会把非法值当成「每周」照常显示，
+         而导出的日历只认 'all'，非法值会被当成隔周。结果就是页面每周有课、日历里少一半。
+         所以宁可整份拒绝，也不接受一份会悄悄漏课的备份。 */
+      var courses = [];
+      for (var i = 0; i < data.courses.length; i++) {
+        try {
+          validateCourse(data.courses[i]);
+        } catch (e) {
+          return { ok: false, error: '第 ' + (i + 1) + ' 门课程有问题：' + e.message };
+        }
+        courses.push(normalizeCourse(data.courses[i]));
+      }
+      var settings = mergeSettings(data.settings);
+      try {
+        validatePeriods(settings.periods);
+      } catch (e) {
+        return { ok: false, error: '设置的节次表有问题：' + e.message };
+      }
+      if (!(Number(settings.totalWeeks) >= 1)) {
+        return { ok: false, error: '设置的总周数必须至少为 1' };
+      }
       // 全部校验通过后才落盘，避免半个文件破坏现有数据
-      writeJSON(KEYS.courses, data.courses);
-      writeJSON(KEYS.settings, data.settings);
-      return { ok: true, courseCount: data.courses.length };
+      writeJSON(KEYS.courses, courses);
+      writeJSON(KEYS.settings, settings);
+      return { ok: true, courseCount: courses.length };
     }
 
     function clearAll() {
