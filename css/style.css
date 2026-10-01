@@ -308,3 +308,76 @@ body.no-scroll { overflow: hidden; }
   color: #fff;
 }
 #form-copy { flex-basis: 100%; }
+
+button.danger {
+  border: 0;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  padding: 9px 16px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+.check input { width: auto; }
+
+/* ---------------------------------------------------------------- 节次编辑器 */
+
+.period-row {
+  display: grid;
+  grid-template-columns: 62px 1fr 1fr 52px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+.period-row:last-of-type { border-bottom: 0; }
+.period-row .p-no { font-size: 12px; color: var(--muted); }
+.period-row input[type="time"] {
+  width: 100%;
+  padding: 7px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.period-row .p-del {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 13px;
+  padding: 6px 0;
+}
+.period-row.invalid input[type="time"] {
+  border-color: var(--danger);
+  background: rgba(217, 83, 79, .1);
+}
+
+#period-add {
+  margin-top: 12px;
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+}
+
+.file-btn {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  text-align: center;
+}

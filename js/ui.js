@@ -54,11 +54,16 @@ var CWui = (function () {
     return d === 0 ? 7 : d;
   }
 
-  /* state.viewWeek 为 null 表示「跟着当前真实周」 */
+  /* state.viewWeek 为 null 表示「跟着当前真实周」。
+     存下来的周次会被钳进 [1, totalWeeks]：用户可能事后把总周数改小，
+     或把学期开始日期往后挪，那样原本合法的周次就悬空了。 */
   function currentViewWeek(settings) {
-    if (state.viewWeek != null) return state.viewWeek;
+    var max = Math.max(1, Number(settings.totalWeeks) || 1);
+    if (state.viewWeek != null) {
+      return Math.min(Math.max(state.viewWeek, 1), max);
+    }
     var w = CWweeks.currentWeek(new Date(), settings.termStartMonday);
-    return w === 0 ? 1 : w;
+    return w === 0 ? 1 : Math.min(w, max);
   }
 
   function stepWeek(delta) {
@@ -174,9 +179,244 @@ var CWui = (function () {
     $('view').innerHTML = '<section class="card"><p class="hint">今日页尚未实现。</p></section>';
   }
 
+  function downloadFile(fileName, text, mime) {
+    var blob = new Blob([text], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /* hh:mm 加上若干分钟，结果仍然落在同一天的 00:00–23:59 内 */
+  function addMinutes(hhmm, min) {
+    var parts = String(hhmm || '').split(':');
+    var total = Number(parts[0]) * 60 + Number(parts[1]) + min;
+    if (!isFinite(total)) total = 0;
+    total = Math.max(0, Math.min(total, 23 * 60 + 59));
+    var h = Math.floor(total / 60);
+    var m = total % 60;
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+
+  function renderPeriodsEditor() {
+    var settings = getStore().getSettings();
+    var editor = $('periods-editor');
+    if (!editor) return;
+
+    var rows = '';
+    for (var i = 0; i < settings.periods.length; i++) {
+      var p = settings.periods[i];
+      rows += '<div class="period-row" data-i="' + i + '">' +
+        '<span class="p-no">第 ' + (i + 1) + ' 节</span>' +
+        '<input type="time" class="p-start" value="' + esc(p.start) + '" aria-label="第 ' + (i + 1) + ' 节开始时间">' +
+        '<input type="time" class="p-end" value="' + esc(p.end) + '" aria-label="第 ' + (i + 1) + ' 节结束时间">' +
+        '<button type="button" class="p-del" data-i="' + i + '" aria-label="删除第 ' + (i + 1) + ' 节">删除</button>' +
+        '</div>';
+    }
+    editor.innerHTML = rows;
+    bindPeriodRows();
+  }
+
+  /* 从 DOM 读回节次，index 一律按当前顺序重排为 1..N */
+  function collectPeriods() {
+    return qsa($('periods-editor'), '.period-row').map(function (row, i) {
+      return {
+        index: i + 1,
+        start: row.querySelector('.p-start').value,
+        end: row.querySelector('.p-end').value
+      };
+    });
+  }
+
+  /* store 只抛出「时间格式必须为 HH:MM」这类笼统信息，定位不到行。
+     这里自己找出到底是哪几行不合规，好把行标红。 */
+  function markInvalidRows(periods) {
+    qsa($('periods-editor'), '.period-row').forEach(function (row, i) {
+      var p = periods[i];
+      var bad = !p || !p.start || !p.end || p.start >= p.end;
+      row.classList.toggle('invalid', bad);
+    });
+  }
+
+  function commitPeriods(periods) {
+    try {
+      getStore().saveSettings({ periods: periods });
+    } catch (err) {
+      markInvalidRows(periods);
+      toast(err.message, 'error');
+      return false;
+    }
+    markInvalidRows(periods);
+    toast('已保存', 'ok');
+    return true;
+  }
+
+  function bindPeriodRows() {
+    qsa($('periods-editor'), '.period-row').forEach(function (row) {
+      row.querySelectorAll('input[type="time"]').forEach(function (input) {
+        input.addEventListener('change', function () {
+          commitPeriods(collectPeriods());
+        });
+      });
+      row.querySelector('.p-del').addEventListener('click', function () {
+        var periods = collectPeriods();
+        if (periods.length <= 1) {
+          toast('至少要保留一节', 'error');
+          return;
+        }
+        periods.splice(Number(row.getAttribute('data-i')), 1);
+        var renumbered = periods.map(function (p, i) {
+          return { index: i + 1, start: p.start, end: p.end };
+        });
+        if (!commitPeriods(renumbered)) return;
+        renderPeriodsEditor(); // 编号前移，必须整段重画
+      });
+    });
+  }
+
   function renderSettings() {
-    // Task 6 实现
-    $('view').innerHTML = '<section class="card"><p class="hint">设置页尚未实现。</p></section>';
+    var store = getStore();
+    var settings = store.getSettings();
+    var view = $('view');
+
+    view.innerHTML =
+      '<section class="card">' +
+        '<h2>学期</h2>' +
+        '<label class="field"><span>名称</span><input id="set-term-name" maxlength="20" value="' + esc(settings.termName) + '"></label>' +
+        '<label class="field"><span>第 1 周周一</span><input type="date" id="set-term-start" value="' + esc(settings.termStartMonday) + '"></label>' +
+        '<label class="field"><span>总周数</span><input type="number" id="set-total-weeks" min="1" max="30" value="' + esc(settings.totalWeeks) + '"></label>' +
+      '</section>' +
+
+      '<section class="card">' +
+        '<h2>节次时间</h2>' +
+        '<div id="periods-editor"></div>' +
+        '<button type="button" id="period-add">+ 增加一节</button>' +
+      '</section>' +
+
+      '<section class="card">' +
+        '<h2>提醒</h2>' +
+        '<label class="field"><span>上课前多少分钟</span><input type="number" id="set-remind" min="0" max="120" value="' + esc(settings.reminderMinutes) + '"></label>' +
+        '<label class="check"><input type="checkbox" id="set-notify"' + (settings.notifyEnabled ? ' checked' : '') + '> 启用 App 内通知</label>' +
+        '<p class="hint">App 关闭后不保证准时提醒。要可靠的提醒请用下面的「导出到手机日历」。</p>' +
+      '</section>' +
+
+      '<section class="card">' +
+        '<h2>导出</h2>' +
+        '<div class="row">' +
+          '<button type="button" id="export-ics" class="primary">导出到手机日历（.ics）</button>' +
+          '<button type="button" id="export-json">导出备份（.json）</button>' +
+          '<label class="file-btn">导入备份<input type="file" id="import-json" accept=".json,application/json" hidden></label>' +
+        '</div>' +
+      '</section>' +
+
+      '<section class="card">' +
+        '<h2>关于</h2>' +
+        '<p class="hint">版本 1.0.0</p>' +
+        '<p class="hint">数据保存在这台设备的浏览器里。清除浏览器数据会丢失，请定期导出备份。</p>' +
+        '<button type="button" id="clear-all" class="danger">清除全部数据</button>' +
+      '</section>';
+
+    renderPeriodsEditor();
+
+    function save(patch) {
+      try {
+        store.saveSettings(patch);
+        toast('已保存', 'ok');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+
+    $('set-term-name').addEventListener('change', function (e) {
+      save({ termName: e.target.value });
+    });
+
+    $('set-term-start').addEventListener('change', function (e) {
+      save({ termStartMonday: e.target.value });
+      state.viewWeek = null; // 基准日变了，「当前周」的含义也变了
+    });
+
+    $('set-total-weeks').addEventListener('change', function (e) {
+      var n = Number(e.target.value);
+      if (!isFinite(n) || n < 1) {
+        toast('总周数必须至少为 1', 'error');
+        e.target.value = store.getSettings().totalWeeks;
+        return;
+      }
+      save({ totalWeeks: Math.floor(n) });
+    });
+
+    $('set-remind').addEventListener('change', function (e) {
+      var n = Number(e.target.value);
+      if (!isFinite(n) || n < 0) {
+        toast('提醒分钟数不能是负数', 'error');
+        e.target.value = store.getSettings().reminderMinutes;
+        return;
+      }
+      save({ reminderMinutes: Math.floor(n) });
+    });
+
+    $('set-notify').addEventListener('change', function (e) {
+      save({ notifyEnabled: e.target.checked });
+      // Task 8 接线：改调 app.notifier.setEnabled(e.target.checked)
+    });
+
+    $('period-add').addEventListener('click', function () {
+      var periods = collectPeriods();
+      var last = periods[periods.length - 1];
+      var start = last ? last.end : '08:00';
+      var next = periods.concat([{ index: periods.length + 1, start: start, end: addMinutes(start, 45) }]);
+      if (!commitPeriods(next)) return;
+      renderPeriodsEditor();
+    });
+
+    $('export-ics').addEventListener('click', function () {
+      var result = CWics.buildICSResult(store.getCourses(), store.getSettings());
+      if (!result.ok) {
+        toast(result.error, 'error');
+        return;
+      }
+      downloadFile(result.fileName, result.text, 'text/calendar;charset=utf-8');
+      toast('已导出，用手机日历打开这个文件', 'ok');
+    });
+
+    $('export-json').addEventListener('click', function () {
+      downloadFile('课程表备份.json', store.exportJSON(), 'application/json');
+      toast('已导出备份', 'ok');
+    });
+
+    $('import-json').addEventListener('change', function (e) {
+      var input = e.target;
+      var file = input.files && input.files[0];
+      if (!file) return;
+      file.text().then(function (text) {
+        if (!window.confirm('导入将覆盖当前 ' + store.getCourses().length + ' 门课程，继续吗？')) return;
+        var result = store.importJSON(text);
+        if (!result.ok) {
+          toast(result.error, 'error');
+          return;
+        }
+        toast('已导入 ' + result.courseCount + ' 门课程', 'ok');
+        state.viewWeek = null;
+        render();
+      }).catch(function () {
+        toast('读取文件失败', 'error');
+      }).then(function () {
+        input.value = ''; // 不清空的话，同一个文件选第二次不会再触发 change
+      });
+    });
+
+    $('clear-all').addEventListener('click', function () {
+      if (!window.confirm('将删除全部课程和设置，此操作不可撤销。继续吗？')) return;
+      store.clearAll();
+      state.viewWeek = null;
+      render();
+      toast('已清除', 'ok');
+    });
   }
 
   // ---------------------------------------------------------------- 课程表单
@@ -425,6 +665,7 @@ var CWui = (function () {
     renderSettings: renderSettings,
     openCourseForm: openCourseForm,
     closeCourseForm: closeCourseForm,
+    downloadFile: downloadFile,
     toast: toast,
     esc: esc,
     getState: function () { return state; }
