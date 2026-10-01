@@ -88,6 +88,16 @@ test('buildICS 的 UID 稳定可复现', () => {
   assert.ok(uid(a).includes('c1'));
 });
 
+test('UID 只由课程 id 决定，改起始周或单双周后仍是同一条事件', () => {
+  const uid = t => t.match(/UID:([^\r\n]+)/)[1];
+  // 用户最常见的操作：课从第 3 周才开始，或把「每周」改成「单周」。
+  // 这时导出的还是同一门课，日历里必须「更新」，不能「新增」——
+  // 否则手机里会多出一条永远不再被更新的旧事件，继续按老时间提醒。
+  const before = ICS.buildICS([course({ id: 'c9', weekStart: 1, weekParity: 'all' })], settings());
+  const after = ICS.buildICS([course({ id: 'c9', weekStart: 3, weekParity: 'odd' })], settings());
+  assert.equal(uid(before), uid(after), '改了周次范围不该换 UID');
+});
+
 test('reminderMinutes 为 0 时不生成 VALARM', () => {
   assert.ok(ICS.buildICS([course()], settings()).includes('BEGIN:VALARM'));
   assert.ok(!ICS.buildICS([course()], settings({ reminderMinutes: 0 })).includes('BEGIN:VALARM'));
@@ -152,7 +162,7 @@ test('buildICS 在节次表被删短后只保留仍有效的课程', () => {
   ]});
   const t = ICS.buildICS(courses, short);
   assert.equal(lines(t).filter(l => l === 'BEGIN:VEVENT').length, 1);
-  assert.ok(t.includes('UID:ok-1@claudeword'));
+  assert.ok(t.includes('UID:ok@claudeword'));
 });
 
 test('buildICSResult 在未设置学期开始日期时拒绝导出', () => {

@@ -113,7 +113,10 @@ var CWics = (function () {
         : Math.floor((course.weekEnd - firstWeek) / 2) + 1;
 
       out.push('BEGIN:VEVENT');
-      out.push('UID:' + course.id + '-' + firstWeek + '@claudeword');
+      /* UID 只用课程 id：日历靠 UID 判断「这条我见过」，改了起始周或单双周
+         还是同一门课，必须更新原来那条。带上 firstWeek 的话，用户把课从第 1 周
+         改到第 3 周再导出，手机里就会多出一条按老时间提醒、且永远不会被更新的旧事件。 */
+      out.push('UID:' + course.id + '@claudeword');
       out.push('DTSTAMP:' + dtstamp);
       out.push('DTSTART;TZID=' + TZID + ':' + formatLocalDT(date, startP.start));
       out.push('DTEND;TZID=' + TZID + ':' + formatLocalDT(date, endP.end));
