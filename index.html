@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>我的课程表</title>
+  <meta name="theme-color" content="#4A7CE8">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="课程表">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -29,5 +34,16 @@
   </script>
   <script src="js/notify.js"></script>
   <script src="js/ui.js"></script>
+
+  <script>
+    // 离线缓存。file:// 下没有 serviceWorker，也没有安全上下文，这里会整个跳过。
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (e) {
+          console.warn('Service Worker 注册失败（离线功能不可用）', e);
+        });
+      });
+    }
+  </script>
 </body>
 </html>
