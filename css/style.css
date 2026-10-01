@@ -212,6 +212,37 @@ button.primary {
 .course.inactive { opacity: .32; }
 .course .c-note { font-size: 9px; opacity: .9; }
 
+/* ---------------------------------------------------------------- 今日页 */
+
+.next-card { text-align: center; padding: 20px 14px; }
+.next-card .hint { margin-bottom: 6px; }
+.next-name { font-size: 22px; margin-bottom: 4px; }
+.next-name.muted { color: var(--muted); font-weight: 500; }
+.next-time { color: var(--muted); margin-bottom: 2px; }
+.next-left { color: var(--accent); font-weight: 600; margin: 0; }
+
+.section-title { font-size: 14px; color: var(--muted); margin: 16px 2px 8px; }
+
+.today-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.today-item:last-child { border-bottom: 0; }
+.today-item.past { opacity: .45; }
+.t-time {
+  flex: 0 0 46px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+  padding-top: 2px;
+}
+.t-main { flex: 1; min-width: 0; }
+.t-name { font-weight: 600; }
+.t-sub { font-size: 12px; color: var(--muted); }
+
 /* ---------------------------------------------------------------- 浮层 */
 
 #toast {

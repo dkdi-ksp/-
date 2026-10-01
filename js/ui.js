@@ -174,9 +174,69 @@ var CWui = (function () {
 
   // ---------------------------------------------------------------- 其余页面
 
+  function hhmm(d) {
+    if (!d) return '';
+    return (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' +
+      (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+  }
+
   function renderToday() {
-    // Task 7 实现
-    $('view').innerHTML = '<section class="card"><p class="hint">今日页尚未实现。</p></section>';
+    var store = getStore();
+    var settings = store.getSettings();
+    var courses = store.getCourses();
+    var now = new Date();
+    var periods = settings.periods;
+
+    var next = CWnextclass.nextClass(courses, settings, now);
+
+    var html = '';
+    if (next) {
+      html += '<section class="card next-card">' +
+        '<p class="hint">下一节课</p>' +
+        '<h2 class="next-name">' + esc(next.course.name) + '</h2>' +
+        '<p class="next-time">' + hhmm(next.startAt) +
+          (next.course.location ? ' · ' + esc(next.course.location) : '') + '</p>' +
+        '<p class="next-left">' +
+          (next.minutesLeft === 0 ? '正在进行' : '还有 ' + next.minutesLeft + ' 分钟') +
+        '</p>' +
+        '</section>';
+    } else {
+      html += '<section class="card next-card">' +
+        '<p class="hint">下一节课</p>' +
+        '<h2 class="next-name muted">今天没有课了</h2>' +
+        (settings.termStartMonday ? '' : '<p class="hint">还没设置学期开始日期，去「设置」里填一下。</p>') +
+        '</section>';
+    }
+
+    var today = CWweeks.occurrencesInRange(courses, now, now, settings.termStartMonday)
+      .map(function (o) { return o.course; })
+      .sort(function (a, b) { return Number(a.startPeriod) - Number(b.startPeriod); });
+
+    html += '<h2 class="section-title">今天的课</h2>';
+    if (!today.length) {
+      html += '<section class="card"><p class="hint">今天没有课</p></section>';
+    } else {
+      html += '<section class="card">';
+      for (var i = 0; i < today.length; i++) {
+        var c = today[i];
+        var startAt = CWweeks.courseStartAt(c, now, periods);
+        var endAt = CWweeks.courseEndAt(c, now, periods);
+        var past = !!(endAt && endAt <= now);
+        html += '<div class="today-item' + (past ? ' past' : '') + '">' +
+          '<div class="t-time">' + hhmm(startAt) + '<br>' + hhmm(endAt) + '</div>' +
+          '<div class="t-main">' +
+            '<div class="t-name">' + esc(c.name) + '</div>' +
+            '<div class="t-sub">第 ' + esc(c.startPeriod) + '-' + esc(c.endPeriod) + ' 节' +
+              (c.teacher ? ' · ' + esc(c.teacher) : '') +
+              (c.location ? ' · ' + esc(c.location) : '') +
+            '</div>' +
+          '</div>' +
+          '</div>';
+      }
+      html += '</section>';
+    }
+
+    $('view').innerHTML = html;
   }
 
   function downloadFile(fileName, text, mime) {

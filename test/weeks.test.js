@@ -151,3 +151,21 @@ test('buildWeekGrid 保留渲染需要的展示字段', () => {
   assert.equal(g.cells[0].color, '#fff');
   assert.ok(g.cells[0].id);
 });
+
+test('courseEndAt 返回当天结束时刻，节次越界返回 null', () => {
+  const periods = [
+    { index: 1, start: '08:00', end: '08:55' },
+    { index: 2, start: '08:55', end: '09:50' },
+  ];
+  const d = W.courseEndAt(course(), W.parseLocalDate('2026-09-07'), periods);
+  assert.equal(d.getHours(), 9);
+  assert.equal(d.getMinutes(), 50);
+  assert.equal(W.courseEndAt(course({ endPeriod: 6 }), TERM, periods), null, '节次越界');
+  assert.equal(W.courseEndAt(course(), TERM, []), null, '节次表为空');
+});
+
+test('isoDayOfWeek 把周日算作 7 而不是 0', () => {
+  assert.equal(W.isoDayOfWeek(W.parseLocalDate('2026-09-07')), 1, '周一');
+  assert.equal(W.isoDayOfWeek(W.parseLocalDate('2026-09-12')), 6, '周六');
+  assert.equal(W.isoDayOfWeek(W.parseLocalDate('2026-09-13')), 7, '周日');
+});

@@ -59,17 +59,31 @@ var CWweeks = (function () {
     return d === 0 ? 7 : d;
   }
 
-  /* 某天某节课的开始时刻。节次表里找不到该节时返回 null（不抛异常）。 */
-  function courseStartAt(course, date, periods) {
-    if (!periods || !periods.length) return null;
-    var p = periods[course.startPeriod - 1];
-    if (!p || typeof p.start !== 'string') return null;
-    var parts = p.start.split(':');
+  /* 'HH:MM' 落到某一天上的具体时刻。格式不对返回 null（不抛异常）。 */
+  function timeOnDate(date, hhmm) {
+    var parts = String(hhmm).split(':');
     var hh = Number(parts[0]);
     var mm = Number(parts[1]);
     if (!isFinite(hh) || !isFinite(mm)) return null;
     var d = parseLocalDate(date);
     return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm);
+  }
+
+  /* 某天某节课的开始时刻。节次表里找不到该节时返回 null（不抛异常）。 */
+  function courseStartAt(course, date, periods) {
+    if (!periods || !periods.length) return null;
+    var p = periods[course.startPeriod - 1];
+    if (!p || typeof p.start !== 'string') return null;
+    return timeOnDate(date, p.start);
+  }
+
+  /* 某天某节课的结束时刻。分不清「正在进行」和「早就上完了」时，
+     通知和「下一节课」都会判断错，所以和 courseStartAt 配套。 */
+  function courseEndAt(course, date, periods) {
+    if (!periods || !periods.length) return null;
+    var p = periods[course.endPeriod - 1];
+    if (!p || typeof p.end !== 'string') return null;
+    return timeOnDate(date, p.end);
   }
 
   /* 逐日推进，收集区间内所有真正要上的课。同一天内按 courses 的原始顺序。 */
@@ -133,6 +147,8 @@ var CWweeks = (function () {
     firstMatchingWeek: firstMatchingWeek,
     activeCoursesInWeek: activeCoursesInWeek,
     courseStartAt: courseStartAt,
+    courseEndAt: courseEndAt,
+    isoDayOfWeek: isoDayOfWeek,
     occurrencesInRange: occurrencesInRange,
     buildWeekGrid: buildWeekGrid
   };
