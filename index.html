@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>我的课程表</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="app-header"></header>
+  <main id="view"></main>
+  <nav id="tabbar">
+    <button data-tab="timetable" class="active">课表</button>
+    <button data-tab="today">今日</button>
+    <button data-tab="settings">设置</button>
+  </nav>
+  <button id="fab" aria-label="添加课程">+</button>
+  <div id="sheet" class="hidden"></div>
+  <div id="toast" class="hidden"></div>
+
+  <script src="js/weeks.js"></script>
+  <script src="js/ics.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/conflicts.js"></script>
+  <script src="js/nextclass.js"></script>
+  <script>
+    // 必须早于 ui.js：ui.js 在加载时就会读 window.app.store
+    window.app = { store: CWstore.createStore(window.localStorage) };
+  </script>
+  <script src="js/notify.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
