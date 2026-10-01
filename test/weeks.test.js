@@ -102,3 +102,52 @@ test('occurrencesInRange 枚举区间内的上课时刻', () => {
 test('occurrencesInRange 在未设置学期时返回空数组', () => {
   assert.deepEqual(W.occurrencesInRange([course()], W.parseLocalDate('2026-09-07'), W.parseLocalDate('2026-09-20'), null), []);
 });
+
+// ---- 课表网格布局（供 ui.js 渲染用，把行/列/跨行的算术从 DOM 代码里抽出来单独测）----
+
+test('buildWeekGrid 计算格子坐标与跨行数', () => {
+  const g = W.buildWeekGrid([course({ startPeriod: 3, endPeriod: 4, dayOfWeek: 3 })], 5, 8);
+  assert.equal(g.periodCount, 8);
+  assert.equal(g.cells.length, 1);
+  assert.deepEqual(
+    { col: g.cells[0].col, row: g.cells[0].row, rowSpan: g.cells[0].rowSpan, active: g.cells[0].active },
+    { col: 4, row: 3, rowSpan: 2, active: true },
+    '第 3-4 节、周三 → 第 3 行、第 4 列、跨 2 行'
+  );
+});
+
+test('buildWeekGrid 周日落在第 8 列', () => {
+  const g = W.buildWeekGrid([course({ dayOfWeek: 7 })], 1, 8);
+  assert.equal(g.cells[0].col, 8);
+});
+
+test('buildWeekGrid 标记奇偶不符的课为 inactive 而不是丢掉', () => {
+  const g = W.buildWeekGrid([course({ weekParity: 'odd' })], 4, 8);
+  assert.equal(g.cells.length, 1, '仍在周次范围内，应保留为灰色占位');
+  assert.equal(g.cells[0].active, false);
+});
+
+test('buildWeekGrid 丢弃完全不在本周次范围内的课', () => {
+  assert.equal(W.buildWeekGrid([course({ weekStart: 5, weekEnd: 8 })], 4, 8).cells.length, 0);
+  assert.equal(W.buildWeekGrid([course({ weekStart: 5, weekEnd: 8 })], 9, 8).cells.length, 0);
+  assert.equal(W.buildWeekGrid([course({ weekStart: 5, weekEnd: 8 })], 5, 8).cells.length, 1);
+});
+
+test('buildWeekGrid 丢弃节次表里不存在的课', () => {
+  assert.equal(W.buildWeekGrid([course({ startPeriod: 9, endPeriod: 9 })], 1, 8).cells.length, 0, '起始节超出节次总数');
+  assert.equal(W.buildWeekGrid([course({ startPeriod: 1, endPeriod: 1 })], 1, 0).cells.length, 0, '节次表为空');
+});
+
+test('buildWeekGrid 把超出节次总数的结束节裁剪掉', () => {
+  const g = W.buildWeekGrid([course({ startPeriod: 7, endPeriod: 12 })], 1, 8);
+  assert.equal(g.cells[0].row, 7);
+  assert.equal(g.cells[0].rowSpan, 2, '第 7 节到第 8 节，跨 2 行而不是 6 行');
+});
+
+test('buildWeekGrid 保留渲染需要的展示字段', () => {
+  const g = W.buildWeekGrid([course({ name: '大学英语', location: 'B-102', color: '#fff' })], 1, 8);
+  assert.equal(g.cells[0].name, '大学英语');
+  assert.equal(g.cells[0].location, 'B-102');
+  assert.equal(g.cells[0].color, '#fff');
+  assert.ok(g.cells[0].id);
+});

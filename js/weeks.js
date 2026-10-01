@@ -94,6 +94,36 @@ var CWweeks = (function () {
     return out;
   }
 
+  /* 课表网格布局。把「第几行、第几列、跨几行」的算术从 DOM 代码里抽出来，
+     单独可测；ui.js 只负责把结果贴成 HTML。
+     列号：第 1 列是节次标签，周一从第 2 列开始，所以 col = dayOfWeek + 1。
+     行号：直接用节次序号。 */
+  function buildWeekGrid(courses, week, periodCount) {
+    var cells = [];
+    var list = courses || [];
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      var sp = Number(c.startPeriod);
+      var ep = Number(c.endPeriod);
+      if (!(sp >= 1) || !(ep >= sp)) continue;
+      if (sp > periodCount) continue;            // 节次表里没有这一节
+      if (week < c.weekStart || week > c.weekEnd) continue; // 这周压根不在课程的时间范围里
+      var lastRow = Math.min(ep, periodCount);   // 结束节超出节次总数时裁掉
+      cells.push({
+        id: c.id,
+        name: c.name,
+        location: c.location || '',
+        color: c.color,
+        dayOfWeek: Number(c.dayOfWeek),
+        col: Number(c.dayOfWeek) + 1,
+        row: sp,
+        rowSpan: lastRow - sp + 1,
+        active: matchesParity(c.weekParity, week)
+      });
+    }
+    return { periodCount: periodCount, cells: cells };
+  }
+
   return {
     parseLocalDate: parseLocalDate,
     daysBetween: daysBetween,
@@ -103,7 +133,8 @@ var CWweeks = (function () {
     firstMatchingWeek: firstMatchingWeek,
     activeCoursesInWeek: activeCoursesInWeek,
     courseStartAt: courseStartAt,
-    occurrencesInRange: occurrencesInRange
+    occurrencesInRange: occurrencesInRange,
+    buildWeekGrid: buildWeekGrid
   };
 })();
 
